@@ -243,7 +243,7 @@ rutaReal = os.path.join(directorioActual, "condicionesPaqueteria.docx")
 
 @st.cache_data(ttl = 600) #Actualizar (cada 10 min)
 def descargarWord(idArchivo, rutaDestino):
-    url = f'https://docs.google.com/document/d/{idArchivo}/edit'
+    url = f'https://docs.google.com/document/d/{idArchivo}/export?format=docx'
     respuesta = requests.get(url)
     if respuesta.status_code == 200:
         with open (rutaDestino, 'wb') as f:
