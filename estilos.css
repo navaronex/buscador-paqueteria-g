@@ -1,0 +1,102 @@
+/* 1. Barra de Streamlit (La de arriba del todo) */
+header[data-testid="stHeader"] {
+    background-color: #C0392B !important;
+    height: 3.5rem;
+}
+header[data-testid="stHeader"] svg { fill: white !important; }
+[data-testid="stDecoration"] { display: none; }
+
+/* 2. El cuerpo de la página (Con margen arriba para que no se coma el logo) */
+.block-container {
+    padding-top: 5rem !important; 
+    max-width: 950px !important;
+    margin: 0 auto;
+}
+
+/* Asegurar que el texto normal dentro de la caja sea legible */
+.resultado-caja p {
+    color: #333 !important;
+    font-size: 1rem;
+    margin-bottom: 12px;
+}
+
+/* Darle un toque más profesional a las líneas divisorias */
+hr {
+    border: 0;
+    height: 1px;
+    background-image: linear-gradient(to right, rgba(192, 57, 43, 0), rgba(192, 57, 43, 0.2), rgba(192, 57, 43, 0));
+}
+
+/* 4. Estilo para el Bloque del Logo (Separado y limpio) */
+.header-geomil {
+    background-color: #C0392B;
+    padding: 25px;
+    color: white;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    margin-bottom: 40px; /* Separación con el buscador */
+}
+.titulo-centrado-rojo {
+    color: #C0392B !important;
+    text-align: center;
+    font-size: 2.2rem !important;
+    font-weight: 800 !important;
+    margin-top: 40px !important;  /* Más espacio arriba */
+    margin-bottom: 30px !important; /* Más espacio abajo */
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.subrayado-busqueda {
+    background-color: #FFEB3B; /* Amarillo normal */
+    color: black;
+    border-radius: 3px;
+    padding: 1px 2px;
+}
+
+.subrayado-busqueda.active {
+    background-color: #F39C12 !important; /* Naranja para la que estás viendo */
+    outline: 2px solid #C0392B;
+    font-weight: bold;
+}
+
+div[data-testid="stColumn"] button {
+    background-color: #C0392B !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 5px !important;
+    width: 100%;
+}
+
+div[data-testid="stColumn"] button:hover {
+    background-color: #922B21 !important;
+    transform: scale(1.05);
+    transition: 0.2s;
+}
+
+/* Ajuste para que los botones de las flechas se vean bien en la barra fija */
+.stButton button {
+    background-color: #C0392B !important;
+    color: white !important;
+    border-radius: 8px !important;
+    height: 45px !important;
+}
+/* Estilo minimalista para el input de navegación en la sidebar */
+[data-testid="stSidebar"] .stNumberInput {
+    width: 80px !important;
+    margin: 0 auto !important;
+}
+
+[data-testid="stSidebar"] .stNumberInput input {
+    text-align: center !important;
+    font-weight: bold !important;
+    font-size: 1.1rem !important;
+    border: 1px solid #ddd !important;
+    background-color: transparent !important;
+}
+
+/* Escondemos los botones + y - internos del input para que no estorben */
+[data-testid="stSidebar"] .stNumberInput button {
+    display: none !important;
+}
