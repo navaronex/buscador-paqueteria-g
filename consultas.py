@@ -4,7 +4,6 @@ from docx import Document #Libreria docx que "leerá" el documento, Document es 
 import pandas as pd
 import streamlit as st
 from PIL import Image
-import base64
 import re
 import unicodedata
 import hashlib
@@ -13,83 +12,90 @@ import time
 
 
 # ------------------------------------------- BACKEND ---------------------------------------------------------------------------------------
-def leerDocumentosPorPaises(rutaDelArchivo): # MÉTODO public String leerDocumentosPorPaises(String rutaDelArchivo){}
-    # OBJETOS
+def leerDocumentosPorPaises(rutaDelArchivo):
     doc = Document(rutaDelArchivo)
     infoPaises = {}
     paisActual = None
-    bufferDeTexto = [] # Buffer
+    bufferDeTexto = []
 
     seccionesEspeciales = [
-        "Países de la Unión Europea", "Enviar baterías de forma segura", "Envio de perfumes", "Gastos por movilización", "Otros artículos a exportar", "Seguro opcional", "Medidas plancha mercancía ecuador"
+        "Países de la Unión Europea", "Envío de baterías de forma segura", "Envío de perfumes sprays Ecuador", 
+        "Gastos por movilización a la aduana", "Otros artículos a exportar", "Seguro opcional", 
+        "Medidas plancha mercancía ecuador", "Envío Transporte de mercancía peligrosa DGD",
+        "Envío y forma de mercancía pesada y volumétrica", "Productos del sistema de paquetería", 
+        "Acceso sistema PUDELECO"
     ]
 
-
-    for x in doc.paragraphs: #Bucle FOR para recorrer los párrafos del documento
-        texto = x.text.strip() #Quitar espacios en blanco
-
-        if not texto: #Si en el texto hay párrafos que están vacíos...
+    for x in doc.paragraphs:
+        texto = x.text.strip()
+        if not texto:
             continue
         
-        buscarTexto = texto.lower() # if texto.contains("Condiciones de Paquetería"):
-        # Filtro de los títulos para cada país
+        buscarTexto = texto.lower()
 
+        # 1. DETECCIÓN DE TÍTULOS (Prioridad Absoluta)
+        esUE = ("unión europea" in buscarTexto or "union europea" in buscarTexto) and len(texto) < 40
+        
+        seccionEncontrada = None
+        for s in seccionesEspeciales:
+            if s.lower() in buscarTexto and len(texto) < 80:
+                seccionEncontrada = s
+                break
+
+        # Filtro para países normales
         esExcepcion = (buscarTexto == "condiciones de envío:" or 
                        buscarTexto == "condiciones de envio:" or
-                       len(texto) < 25 and "condiciones" in buscarTexto)
+                       (len(texto) < 25 and "condiciones" in buscarTexto))
 
-        #Detector de secciones
-        esUE = "unión europea" in buscarTexto or "union europea" in buscarTexto
-        esSeccionEspecial = any(seccion.lower() in buscarTexto for seccion in seccionesEspeciales) and len(texto) < 75
-        tituloPaises = (not esExcepcion and ("paquetería" in buscarTexto or 
-                                            "paqueteria" in buscarTexto or #Detectar si es un país normal (paqueteria, courier)
-                                            "courier" in buscarTexto or
-                                            "condiciones de" in buscarTexto) and len(texto) < 85)
+        esPaisNormal = (not esExcepcion and not seccionEncontrada and not esUE and
+                        ("[" not in texto) and 
+                        ("paquetería" in buscarTexto or "paqueteria" in buscarTexto or 
+                         "courier" in buscarTexto or "condiciones de" in buscarTexto) 
+                        and len(texto) < 85)
 
-
-        if esUE or esSeccionEspecial or tituloPaises: #Antes de ir al siguiente titulo del país, se guarda el anterior en el BUFFER
-
-            if paisActual and bufferDeTexto: #Si ya hay un pais actual
-                contenido = "\n" .join(bufferDeTexto) ## nuevo, de la función formatearTexto
+        # 2. SI DETECTAMOS UN TÍTULO NUEVO, GUARDAMOS EL ANTERIOR
+        if esUE or seccionEncontrada or esPaisNormal:
+            if paisActual and bufferDeTexto:
+                contenido = "\n".join(bufferDeTexto)
                 if paisActual in infoPaises:
-                    infoPaises [paisActual] += "\n"+ contenido #Une el buffer con DOS salto de linea para unir todas las lineas de texto y se guarda.
+                    infoPaises[paisActual] += "\n" + contenido
                 else:
                     infoPaises[paisActual] = contenido
+                bufferDeTexto = [] # Vaciamos el buffer para el nuevo país
 
+            # ASIGNAR EL NUEVO NOMBRE
             if esUE:
                 paisActual = "Países de la Unión Europea"
-            elif esSeccionEspecial:
-                for x in seccionesEspeciales:
-                    if x.lower() in buscarTexto:
-                        paisActual = x
-                        break
-
+            elif seccionEncontrada:
+                paisActual = seccionEncontrada
             else:
                 nombre = texto
                 for basura in ["Categorías de paquetes", "Condiciones de", "Paquetería", "Courier"]:
-                    nombre = nombre.replace(basura, "").replace(basura.lower(), "") 
-                paisActual = nombre.split("(")[0].replace(":", "").strip().capitalize() #Limpieza final
+                    nombre = nombre.replace(basura, "").replace(basura.lower(), "")
+                 
+                nombre_limpio = nombre.split("(")[0].replace(":", "").strip()
 
-            bufferDeTexto = []
+                if "españa" in nombre_limpio.lower() and "uu" in nombre_limpio.lower():
+                    paisActual = "Condiciones España-EE.UU."
+                else:
+                    paisActual = nombre_limpio.title().strip()
         
         elif paisActual:
+            # Si no es un título, es contenido y va al buffer
             bufferDeTexto.append(texto)
 
-
-
-
-    if paisActual and bufferDeTexto: #Guardar último país procesado tras el bucle FOR
-        contenido = "\n" .join(bufferDeTexto)
+    # Guardar el último al salir del bucle
+    if paisActual and bufferDeTexto:
+        contenido = "\n".join(bufferDeTexto)
         if paisActual in infoPaises:
             infoPaises[paisActual] += "\n" + contenido
         else:
             infoPaises[paisActual] = contenido
     
-    directorioScript = os.path.dirname(__file__)
-    for x in infoPaises: #Formatear todo al final (para html, negrita,...)
+    directorioScript = os.path.dirname(os.path.abspath(__file__))
+    for x in infoPaises:
         lineas = infoPaises[x].split("\n")
         infoPaises[x] = formatearTexto(lineas, directorioScript)
-
 
     return infoPaises    
     
@@ -97,87 +103,94 @@ def leerDocumentosPorPaises(rutaDelArchivo): # MÉTODO public String leerDocumen
 def formatearTexto(lineas, directorioBase):
     resultado = []
     palabrasTexto = [
-        "Peso", "Precio","Destinatario", "Importante", "Prohibido", "Documentación", "Observaciones","Categoría", "Seguro", "Medidas", "Nota", "Valor", "Declaración", "Máximo", "Mínimo", "Entregas", "Condiciones","Condiciones generales", "Decreto", "Descripción", "Impuesto", "Efectivo", "Menaje de casa", "PERFUMES SPRAYS", "Envío", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"
+        "Peso", "Precio","Destinatario", "Importante", "Prohibido", "Documentación", "Observaciones","Categoría", "Seguro", 
+        "Medidas", "Nota", "Valor", "Declaración", "Máximo", "Mínimo", "Entregas", "Condiciones","Condiciones generales", "Decreto",
+         "Descripción", "Impuesto", "Efectivo", "Menaje de casa", "PERFUMES SPRAYS", "Envío", "lunes", "martes", "miércoles", "jueves", 
+         "viernes", "sábado", "domingo", "Dimensiones", "0","1","2","3","4","5","6","7","8","9", "embalaje", "reducido", "no podrá enviarse mediante el servicio de Courier",
+         "cotizar el envío individual del artículo directamente con la aerolínea", "Carga volumétrica",
+         "Fórmula general", "Largo", "Ancho", "Alto", "kg", "cm", "Nº de bultos", "Factura comercial"
+         "CATEGORÍA G", "CATEGORÍA B"
     ]
-
-    rutaImgBaterias = os.path.join(directorioBase, "assets", "baterias.png")
-    srcBaterias = obtenerImagenBase64(rutaImgBaterias)
-
-    ignorar = [f"[imagen{i}]" for i in range (2,11)]
-    #ignorar.append("[perfumeSpray2]") # Por si acaso el Word tiene la segunda etiqueta
 
     for x in lineas:
         l = x.strip()
-        if not l: continue
-
-        if l.lower() in ignorar or (l.startswith("[perfumeSpray") and l != "[perfumeSpray1]")or (l.startswith("[imagenSeguro") and l != "[imagenSeguro1]"):
+        if not l:
             continue
-        # Caso Imagen Batería
-        if l == "[INSERTAR_IMAGEN_BATERIA_AQUI]":
-            if srcBaterias:
-                resultado.append(f'<div style="text-align:center;margin:20px 0;"><img src="{srcBaterias}" style="max-width:100%;height:auto;border:1px solid #ccc;"><p style="font-size:0.8rem;color:#666;font-style:italic;">Tabla de baterías</p></div>')
-            continue
+        # ------------------------- Detectar y convertir URL's ---------------------------
+        url_pattern = r'(https?://[^\s]+)'
 
-
-        # --- CASO PERFUMES (Simple y Directo) ---
-        if l == "[perfumeSpray1]":
-            src1 = obtenerImagenBase64(os.path.join(directorioBase, "assets", "perfumeSpray1.png"))
-            src2 = obtenerImagenBase64(os.path.join(directorioBase, "assets", "perfumeSpray2.png"))
-            
-            if src1 and src2:
-                resultado.append(f'''
-                    <div style="display: flex; justify-content: center; gap: 10px; margin: 20px 0;">
-                        <img src="{src1}" style="width: 48%; height: auto; border: 1px solid #ccc;">
-                        <img src="{src2}" style="width: 48%; height: auto; border: 1px solid #ccc;">
-                    </div>
-                ''')
-                
-                continue # Solo saltamos la línea [perfumeSpray1] porque ya pusimos las dos fotos
-        
-        # -- IMAGENES SEGUROS --
-        if l == "[imagenSeguro1]":
-            srcSeg1 = obtenerImagenBase64(os.path.join(directorioBase, "assets", "imagenSeguro1.png")) 
-            srcSeg2 = obtenerImagenBase64(os.path.join(directorioBase, "assets", "imagenSeguro2.png")) 
-
-            if srcSeg1 and srcSeg2:
-                htmlSeguros = f'''
-                <div style="text-align: center; margin: 20px 0; padding: 10px; background-color: #f9f9f9; border-radius: 10px;">
-                    <img src="{srcSeg1}" style="display: inline-block; width: 45%; max-width: 300px; margin: 5px; border: 1px solid #ddd; border-radius: 5px;">
-                    <img src="{srcSeg2}" style="display: inline-block; width: 45%; max-width: 300px; margin: 5px; border: 1px solid #ddd; border-radius: 5px;">
+        if "youtube.com/watch?v=" in l or "youtu.be/" in l:
+            # Si es YouTube, extraemos el ID para embeber el video
+            video_id = l.split("v=")[-1].split("&")[0] if "v=" in l else l.split("/")[-1]
+            resultado.append(f'''
+                <div style="margin: 20px 0; text-align: center;">
+                    <iframe width="100%" height="315" src="https://www.youtube.com/embed/{video_id}" 
+                    frameborder="0" allowfullscreen style="border-radius:10px;"></iframe>
                 </div>
-                '''
-                resultado.append(htmlSeguros)
-                continue
+            ''')
+            continue # Saltamos para no poner el texto de la URL debajo
         
-        # -- IMAGEN PLANCHA -- 
-        if l == "[imagenPlancha]":
-            srcPlancha = obtenerImagenBase64(os.path.join(directorioBase, "assets", "imagenPlancha.png"))
-            if srcPlancha:
+        # Para otras URLs normales, las hacemos clicables
+        l = re.sub(url_pattern, r'<a href="\1" target="_blank" style="color: #C0392B; text-decoration: underline;">\1</a>', l)
+        
+        # ------------------------------ FIN DETECCIÓN URLS ----------------------------
+
+        l_low = l.lower().replace(" ", "").strip()
+        # asegurar que limpie posibles puntos o caracteres del Word:
+   
+
+        # --- GESTIÓN DE IMÁGENES ROBUSTA ---
+        # l_low ya viene limpio (sin espacios y en minúsculas)
+        
+        # Diccionario de mapeo: Etiqueta en Word -> Nombre de archivo real
+        mapeo_imagenes = {
+            "[imagentabla1]": "tabla1.png",
+            "[imagentabla2]": "tabla2.png",
+            "[imagentabla3]": "tabla3.png",
+            "[imagenseguro1]": "seguro1.png",
+            "[imagenseguro2]": "seguro2.png",
+            "[imagenbaterias]": "baterias.png",
+            "[imagencargavol]": "CargaVolumen.png",
+            "[imagenformulavol]": "formulaVolumen.png",
+            "[imagenformulapesovol]": "formulaPesoVol.png",
+            "[imagenplancha]": "plancha.png",
+            "[imagencourierec]": "courierEc.png"
+        }
+
+        l_limpia = l.lower().replace(" ", "")
+
+        encontrada = False
+        for etiqueta, archivo in mapeo_imagenes.items():
+            if etiqueta in l_limpia:
+                ruta_img = os.path.join(directorioBase, "assets", archivo)
+                s = obtenerImagenBase64(ruta_img)
+                if s:
+                    resultado.append(f'<div style="text-align:center;margin:20px 0;"><img src="{s}" style="max-width:100%;border-radius:5px;border:1px solid #ccc;"></div>')
+                else:
+                    # ESTO ES PARA DEPURAR: Si no carga, te dirá la ruta que falló en el HTML
+                    resultado.append(f'<p style="color:orange; font-size:0.7rem;">Error: No se encontró {archivo} en {ruta_img}</p>')
+                encontrada = True
+                break
+        
+        if encontrada: continue
+
+        # Caso especial Perfumes (Doble imagen)
+        if "[perfumespray1]" in l_low:
+            r1 = os.path.join(directorioBase, "assets", "perfumeSpray1.png")
+            r2 = os.path.join(directorioBase, "assets", "perfumeSpray2.png")
+            s1 = obtenerImagenBase64(r1)
+            s2 = obtenerImagenBase64(r2)
+            if s1 and s2:
                 resultado.append(f'''
-                    <div style="text-align:center;margin:20px 0;">
-                        <img src="{srcPlancha}" style="max-width:100%;height:auto;border:1px solid #ccc;">
-                        <p style="font-size:0.8rem;color:#666;font-style:italic;">Medidas de plancha</p>
-                    </div>
-                ''')
-                continue
+                    <div style="display:flex;justify-content:center;gap:10px;margin:20px 0;">
+                        <img src="{s1}" style="width:48%;border:1px solid #ccc;">
+                        <img src="{s2}" style="width:48%;border:1px solid #ccc;">
+                    </div>''')
+            continue
+        elif "[perfumespray2]" in l_low:
+            continue
 
-
-
-        # Caso Galería
-        etiquetaImagen = re.match(r"\[imagen\s?(\d+)\]", l.lower())
-        if etiquetaImagen and int(etiquetaImagen.group(1)) == 1:
-            imagenesHTML = ""
-            for i in range(1, 11):
-                src = obtenerImagenBase64(os.path.join(directorioBase, "assets", f"imagen{i}.jpg"))
-                if not src: 
-                    src = obtenerImagenBase64(os.path.join(directorioBase, "assets", f"imagen{i}.png"))
-                if src:
-                    imagenesHTML += f'<div style="flex:1 1 300px;max-width:400px;margin:10px;text-align:center;"><img src="{src}" style="width:100%; height:auto;"></div>'
-            if imagenesHTML:
-                resultado.append(f'<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:25px 0;background:transparent;">{imagenesHTML}</div>')
-            continue 
-
-        # Formato de Títulos y Texto
+        # (El resto de tu lógica de títulos y párrafos se mantiene igual debajo)
         esPalabraClave = any(l.startswith(pc) for pc in palabrasTexto)
         esTituloCorto = (len(l) < 50 and l.endswith(":"))
         esCategoria = l.upper().startswith("CATEGORÍA") and len(l) < 40
@@ -223,18 +236,26 @@ def obtenerImagenBase64(rutaImagen): #Función que convertirá el logo de geomil
 
 def cargarJs(nombreJs):
     ruta = os.path.join(os.path.dirname(__file__), nombreJs)
-    if ruta:
+    if ruta and os.path.exists(ruta):
         with open(ruta, "r", encoding='utf-8') as f:
             return f.read()
-        return ""
+    return ""
 
 
 
 
-# ------------------------------------------ FRONTEND --------------------------------------------
+# ------------------------------------------------------ FRONTEND -------------------------------------------------------------------
 import requests
 
-st.set_page_config(page_title = "Buscador Paquetería", page_icon = "") #1º
+st.set_page_config(
+    page_title = "Buscador Paquetería",
+    page_icon = "",
+    menu_items = {
+        'Get help': 'https://docs.streamlit.io/library/get-started/quick-start',
+        'Report a bug': 'https://www.senescyt.gob.ec/web/guest/consultas',
+        'About': 'http://tucelularlegal.arcotel.gob.ec/tucelularlegal/consulta_Imeis.aspx'
+    }
+) #1º
 directorioActual = os.path.dirname(__file__) #2º
 
 # ----------------- Configuración para la Nube de Streamlit -----------------
@@ -244,12 +265,13 @@ rutaReal = os.path.join(directorioActual, "condicionesPaqueteria.docx")
 @st.cache_data(ttl = 600) #Actualizar (cada 10 min)
 def descargarWord(idArchivo, rutaDestino):
     url = f'https://docs.google.com/document/d/{idArchivo}/export?format=docx'
-    respuesta = requests.get(url)
-    if respuesta.status_code == 200:
-        with open (rutaDestino, 'wb') as f:
-            f.write(respuesta.content)
-    else:
-        st.error ("No se pudo descargar el documento...")
+    try:
+        respuesta = requests.get(url, timeout=15)
+        if respuesta.status_code == 200:
+            with open (rutaDestino, 'wb') as f:
+                f.write(respuesta.content)
+    except:
+        pass
 
 descargarWord (idArchivoDocx, rutaReal)
 
@@ -260,22 +282,67 @@ estilosBuscador(ruta_css)
 
 ########################################## IMAGEN GEOMIL ############################################
 rutaLogo = os.path.join(directorioActual, "assets", "LogoGeomilBlanco.png") # 4º
-rutaHTML = os.path.join(directorioActual, "header.html")
 
+rutaB1 = os.path.join(directorioActual, "assets", "logoArancel.png")
+rutaB2 = os.path.join(directorioActual, "assets", "logoSenecsyt.png")
+rutaB3 = os.path.join(directorioActual, "assets", "logoTuCelular.png")
+
+
+rutaHTML = os.path.join(directorioActual, "header.html")
 
 if os.path.exists(rutaLogo) and os.path.exists(rutaHTML):
     logoBase64 = obtenerImagenBase64(rutaLogo) #Convertir el logo a imagen base64
 
-    if logoBase64:
-        with open(rutaHTML, "r", encoding="utf-8") as f:
-            contenidoHTML = f.read()
+    boton1 = obtenerImagenBase64(rutaB1)
+    boton2 = obtenerImagenBase64(rutaB2)
+    boton3 = obtenerImagenBase64(rutaB3)
 
-        finalHTML = contenidoHTML.replace("{{LOGO_BASE64}}", logoBase64)
+    
+    with open(rutaHTML, "r", encoding="utf-8") as f:
+        st.markdown (f.read().replace("{{LOGO_BASE64}}", logoBase64), unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <style>
+            /* Contenedor para los 3 botones arriba */
+            .barra-botones-top {{
+                position: fixed;
+                top: 8px;
+                right: 310px; /* Separación del botón Deploy/Menú */
+                z-index: 999999;
+                display: flex;
+                gap: 20px;
+                align-items: center;
+            }}
+            .img-top {{
+                width: 50px;
+                height: 40px;
+                object-fit: contain;
+                cursor: pointer;
+                transition: 0.3s;
+                filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));
+            }}
+            .img-top:hover {{ 
+                transform: scale(1.2); 
+                filter: drop-shadow(0px 0px 6px rgba(255,255,255,0.8));
+            }}
+            
+            /* Ajuste para móviles: si la pantalla es pequeña, los ocultamos o movemos */
+            @media (max-width: 800px) {{ .barra-botones-top {{ display: none; }} }}
+        </style>
         
-        st.markdown(finalHTML, unsafe_allow_html=True)
+        <div class="barra-botones-top">
+            <a href="https://www.pudeleco.com/online/clave.html" target="_blank">
+                <img src="{boton1}" class="img-top" title="Aranceles Pudeleco">
+            </a>
+            <a href="https://www.senescyt.gob.ec/web/guest/consultas" target="_blank">
+                <img src="{boton2}" class="img-top" title="Senescyt Ecuador">
+            </a>
+            <a href="http://tucelularlegal.arcotel.gob.ec/tucelularlegal/consulta_Imeis.aspx" target="_blank">
+                <img src="{boton3}" class="img-top" title="Tucelularlegal">
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
-
-       # st.write(f'<div class="header-container">{finalHTML}</div>', unsafe_allow_html=True)
 
 
 #####################################################################################################
@@ -293,14 +360,15 @@ if os.path.exists(rutaReal): # Si el archivo existe en esa ruta.... ES para comp
 
     col1, col2, col3 = st.columns([1, 2, 1]) #Centrar el buscador en columnas... Selector de secciones
     with col2:
-        opcion = st.selectbox("Selecciona o escribe un país: ",[""]+listaPaises) #Barra de búsqueda con autocompletado
+        # Aquí 'orden' garantiza que el selectbox mantenga el orden del Word
+        opcion = st.selectbox("Selecciona sección:", [""] + listaPaises) 
 
     if opcion:
-        st.markdown(f'<p class = "titulo-centrado-rojo"> Información sobre {opcion}</p>', unsafe_allow_html = True) #Título pais elegido
+        st.markdown(f'<p class = "titulo-centrado-rojo">{opcion}</p>', unsafe_allow_html = True) #Título pais elegido
         
         with st.sidebar: # Buscador en la barra lateral
             st.header("Buscador")
-            buscador = st.text_input ("Escribe una palabra a buscar: ", placeholder = "Ej: Factura, 100kg, Moviles,...", key = "input_busqueda")
+            buscador = st.text_input ("Escribe para buscar:", placeholder = "Factura, 100kg,...", key = "input_busqueda")
 
             contenidoHTML = datos [opcion]
 
@@ -357,11 +425,7 @@ if os.path.exists(rutaReal): # Si el archivo existe en esa ruta.... ES para comp
 
                     st.markdown(f"<div style= 'text-align: center; font-size: 0.8rem; color: #666; margin-top: -10px;'>{st.session_state.indiceBusqueda} de {coincidencias} </div>", unsafe_allow_html = True)
                     indiceActual = st.session_state.indiceBusqueda
-                #Selector de coincidencias
-                #if coincidencias > 1:
-                    #_, col_num, _ = st.columns([1, 2, 1])
-                    #with col_num:
-                        #indiceActual = st.number_input("Ir a: ", min_value=1, max_value=coincidencias, step=1)
+
 
                 #Subrayado de palabras del buscador
                     listaContador = {"n": 0}
@@ -388,56 +452,12 @@ if os.path.exists(rutaReal): # Si el archivo existe en esa ruta.... ES para comp
                         st.components.v1.html (scriptFinal, height = 0)
 
         ########### Imagen de Courier Ecuador ################
-        if opcion == "Condiciones menaje de casa":
-            rutaImgEc = os.path.join(directorioActual, "assets", "courierEc.png")
-            if os.path.exists(rutaImgEc):
-                st.image(rutaImgEc, caption = "Courier Ecuador", use_container_width=True)
+        #if opcion == "Ecuador":
+        #    rutaImgEc = os.path.join(directorioActual, "assets", "courierEc.png")
+        #    if os.path.exists(rutaImgEc):
+        #        st.image(rutaImgEc, use_container_width=True)
         ########### Imagen de Baterías #########################
 
         
 
         st.markdown(f'<div class = "resultado-caja">{contenidoHTML}</div>', unsafe_allow_html = True)
-
-
-
-
-        
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#-- BLOQUE DE PRUEBA... public static void main (String [] args){} 
-
-#    print(f"Se ha indexado la información de {len(datos)} países con éxito.")
-    #BUSCADOR
-#
-#   print("-"*50)
-#    buscar = input("¿Qué país quieres buscar?: ").strip().capitalize()
-#    if buscar in datos:
-#        print(f"\nINFORMACIÓN DE: {buscar}")
-#        print(datos[buscar])
-#    else:
-#        print(f"No se ha encontrado información para {buscar}")
- #   
-#else:
- #   print(f"No se ha encotrado el archivo en:{rutaReal}") """
-
-
-
